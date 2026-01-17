@@ -1,40 +1,56 @@
 package com.example.websocket.service;
 
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.Jws;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import javax.crypto.SecretKey;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
 @Component
 public class JwtService {
+    private final SecretKey key;
+    private final String issuer;
+    private final long accessTokenMinutes;
 
-    private static final String SECRET =
-            "my-secret-key-my-secret-key-my-secret-key";
+    public JwtService(
+            @Value("${app.jwt.secret}") String secret,
+            @Value("${app.jwt.issuer}") String issuer,
+            @Value("${app.jwt.accessTokenMinutes}") long accessTokenMinutes
+    ) {
+        this.key = Keys.hmacShaKeyFor(secret.getBytes());
+        this.issuer = issuer;
+        this.accessTokenMinutes = accessTokenMinutes;
+    }
 
-    public String generate(String username) {
+    public String mintAccessToken(String userId) {
+        Instant now = Instant.now();
+        Instant exp = now.plusSeconds(accessTokenMinutes * 60);
+
         return Jwts.builder()
-                .setSubject(username)
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + 15 * 60 * 1000))
-                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes()))
+                .setIssuer(issuer)
+                .setSubject(userId)
+                .setIssuedAt(Date.from(now))
+                .setExpiration(Date.from(exp))
+                .signWith(key)
                 .compact();
     }
 
-    public String extractUser(String token) {
+    public String verifyAndGetUserId(String token) {
         return Jwts.parserBuilder()
-                .setSigningKey(SECRET.getBytes())
+                .setSigningKey(key)
                 .build()
-                .parseClaimsJws(token)
-                .getBody()
+                .parseClaimsJws(token);
+                .getPayload()
                 .getSubject();
     }
 
-    public boolean valid(String token) {
-        try {
-            extractUser(token);
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
-    }
+
 }

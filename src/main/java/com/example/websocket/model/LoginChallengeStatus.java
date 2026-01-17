@@ -1,7 +1,8 @@
 package com.example.websocket.model;
 
-public enum LoginStatus {
+public enum LoginChallengeStatus {
     PENDING,
     APPROVED,
-    DENIED
+    DENIED,
+    EXPIRED
 }

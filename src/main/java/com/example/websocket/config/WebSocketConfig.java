@@ -10,9 +10,14 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+    private final UserIdHandshakeHandler handshakeHandler;
 
+    public WebSocketConfig(UserIdHandshakeHandler handshakeHandler, WebSocketAuthInterceptor authInterceptor) {
+        this.handshakeHandler = handshakeHandler;
+        this.authInterceptor = authInterceptor;
+    }
 
-//    private final WebSocketAuthInterceptor authInterceptor;
+        private final WebSocketAuthInterceptor authInterceptor;
 //
 //    public WebSocketConfig(WebSocketAuthInterceptor authInterceptor) {
 //        this.authInterceptor = authInterceptor;
@@ -38,6 +43,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         // Enable SockJS for browsers that don't support WebSocket
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
+                .setHandshakeHandler(handshakeHandler)
                 .withSockJS(); //fallback for  browsers
     }
 }

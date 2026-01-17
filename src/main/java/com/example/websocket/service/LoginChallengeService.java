@@ -1,42 +1,76 @@
 package com.example.websocket.service;
 
-import com.example.websocket.model.LoginChallenge;
-import com.example.websocket.model.LoginStatus;
+
+import com.example.websocket.dto.LoginAlertMessage;
+import com.example.websocket.entity.LoginChallenge;
+import com.example.websocket.model.LoginChallengeStatus;
+import com.example.websocket.repo.LoginChallengeRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.time.Instant;
+import java.util.Optional;
 
 @Service
 public class LoginChallengeService {
-    private final Map<String, LoginChallenge> challenges = new ConcurrentHashMap<>();
-    private final SimpMessagingTemplate messagingTemplate;
 
-    public LoginChallengeService(SimpMessagingTemplate messagingTemplate) {
-        this.messagingTemplate = messagingTemplate;
+    private final com.example.websocket.repo.LoginChallengeRepository repo;
+    private final SimpMessagingTemplate messaging;
+    private final long ttlSeconds;
+
+    public LoginChallengeService(
+            LoginChallengeRepository repo,
+            SimpMessagingTemplate messaging,
+            @Value("${app.challenge.ttlSeconds}") long ttlSeconds
+    ) {
+        this.repo = repo;
+        this.messaging = messaging;
+        this.ttlSeconds = ttlSeconds;
     }
 
-    public LoginChallenge createChallenge(String username, String ip, String ua) {
-        LoginChallenge c = new LoginChallenge(username, ip, ua);
-        challenges.put(c.getChallengeId(), c);
+    @Transactional
+    public LoginChallenge createAndNotify(String userId, String ip, String userAgent) {
+        Instant now = Instant.now();
+        Instant exp = now.plusSeconds(ttlSeconds);
 
-        messagingTemplate.convertAndSendToUser(
-                username,
+        LoginChallenge ch = repo.save(new LoginChallenge(userId, now, exp, ip, userAgent));
+
+        // Push to Device A: /user/{userId}/queue/login-alerts
+        messaging.convertAndSendToUser(
+                userId,
                 "/queue/login-alerts",
-                c
+                new LoginAlertMessage(ch.getId(), ip, userAgent, now, exp)
         );
 
-        return c;
+        return ch;
     }
 
-    public LoginChallenge get(String id) {
-        return challenges.get(id);
+    @Transactional
+    public Optional<LoginChallenge> getAndUpdateExpiry(String challengeId) {
+        return repo.findById(challengeId).map(ch -> {
+            ch.expireIfNeeded(Instant.now());
+            return ch;
+        });
     }
 
-    public LoginChallenge respond(String id, LoginStatus status) {
-        LoginChallenge c = challenges.get(id);
-        if (c != null) c.setStatus(status);
-        return c;
+    @Transactional
+    public LoginChallenge decide(String challengeId, String approverUserId, boolean approve) {
+        LoginChallenge ch = repo.findById(challengeId).orElseThrow();
+        ch.expireIfNeeded(Instant.now());
+
+        if (!ch.getUserId().equals(approverUserId)) {
+            throw new SecurityException("Not owner of challenge");
+        }
+
+        if (ch.getStatus() != LoginChallengeStatus.PENDING) {
+            return ch; // already decided/expired
+        }
+
+        if (approve) ch.approve(approverUserId, Instant.now());
+        else ch.deny(approverUserId, Instant.now());
+
+        return ch;
     }
 }

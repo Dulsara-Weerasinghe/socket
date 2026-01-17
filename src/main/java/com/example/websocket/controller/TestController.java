@@ -1,13 +1,13 @@
 package com.example.websocket.controller;
 
-import com.example.websocket.model.LoginChallenge;
+import com.example.websocket.dto.LoginAttemptRequest;
+import com.example.websocket.dto.LoginAttemptResponse;
+import com.example.websocket.model.PresenceTracker;
 import com.example.websocket.service.JwtService;
 import com.example.websocket.service.LoginChallengeService;
-import com.example.websocket.service.WsNotifier;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -16,55 +16,52 @@ public class TestController {
     private final JwtService jwt;
     private final LoginChallengeService challengeService;
     private final SimpMessagingTemplate messagingTemplate;
-private final WsNotifier wsNotifier;
 
     // simulate "user already logged in"
     private static boolean alreadyLoggedIn = false;
 
-    public TestController(JwtService jwt, LoginChallengeService challengeService, SimpMessagingTemplate messagingTemplate, WsNotifier wsNotifier) {
+
+
+    private final PresenceTracker presence;
+
+    public TestController(JwtService jwt, LoginChallengeService challengeService, SimpMessagingTemplate messagingTemplate, PresenceTracker presence) {
         this.jwt = jwt;
         this.challengeService = challengeService;
         this.messagingTemplate = messagingTemplate;
-        this.wsNotifier = wsNotifier;
+
+        this.presence = presence;
     }
+
 
 
     @PostMapping("/login")
-    public Map<String, Object> login(@RequestBody Map<String, String> req,
-                                     @RequestHeader(value = "User-Agent", required = false) String ua) {
-        System.out.println("WS CONNECT token = " + req);
-        String username = req.get("username");
-
-        System.out.println("usernnnnnn"+ username);
-        if (!alreadyLoggedIn) {
-            alreadyLoggedIn = true;
-            return Map.of(
-                    "status", "OK",
-                    "accessToken", jwt.generate(username)
-            );
-
+    public LoginAttemptResponse login(@RequestBody LoginAttemptRequest req, HttpServletRequest servletReq) {
+        // DEMO: authenticate username/password.
+        // Replace with your real auth (DB, LDAP, etc).
+        String userId = req.getUsername(); // treat username as userId
+        if (req.getPassword() == null || req.getPassword().isBlank()) {
+            throw new RuntimeException("Invalid credentials");
         }
-            // 🚨 CONCURRENT LOGIN FOUND
-           var  challenge = challengeService.createChallenge(
-                    username,
-                    "127.0.0.1",
-                    ua
+
+        String ip = servletReq.getRemoteAddr();
+        String ua = servletReq.getHeader("User-Agent");
+
+        // If user is online on Device A (web app), require approval
+        if (presence.isOnline(userId)) {
+            var ch = challengeService.createAndNotify(userId, ip, ua);
+            return new LoginAttemptResponse(
+                    "PENDING_APPROVAL",
+                    null,
+                    ch.getId(),
+                    java.time.Duration.between(java.time.Instant.now(), ch.getExpiresAt()).getSeconds()
             );
+        }
 
-        System.out.println("challenge passing to notifier---> " + challenge.getChallengeId() + " " + challenge.getIp() + challenge.getStatus() + challenge.getUsername());
-            // 🔔 THIS IS WHERE WE INFORM DEVICE A
-            wsNotifier.notifyUser(
-                    username,
-                    challenge
-            );
-
-
-        System.out.println("Challenge----> " + challenge);
-        return Map.of(
-                "status", "PENDING_APPROVAL",
-                "challengeId",challenge.getChallengeId()
-        );
+        // else normal login
+        String token = jwt.mintAccessToken(userId);
+        return new LoginAttemptResponse("OK", token, null, 0);
     }
+
 
     // Simulate concurrent login warning
     @PostMapping("/warn")
