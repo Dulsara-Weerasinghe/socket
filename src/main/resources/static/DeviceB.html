@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Device B (New Login)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    input { margin: 4px 0; padding: 6px; width: 260px; }
+    button { padding: 8px 12px; }
+    pre { background: #f6f6f6; padding: 10px; }
+    .card { border: 1px solid #ddd; padding: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+<h2>Device B (New Login Attempt)</h2>
+
+<div class="card">
+  <div><b>Login</b></div>
+  <input id="username" placeholder="username" value="alice" />
+  <input id="password" placeholder="password" value="pass" type="password" />
+  <button onclick="loginB()">Login</button>
+  <div id="status"></div>
+</div>
+
+<h3>Logs</h3>
+<pre id="log"></pre>
+
+<script>
+  const API = "http://localhost:8080";
+  let pollTimer = null;
+
+  function log(msg) {
+    const el = document.getElementById("log");
+    el.textContent += msg + "\n";
+  }
+
+  async function loginB() {
+    clearInterval(pollTimer);
+    document.getElementById("status").textContent = "";
+
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    const res = await fetch(API + "/api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+    log("Login response: " + JSON.stringify(data));
+
+    if (data.status === "OK") {
+      document.getElementById("status").textContent = "Logged in OK. Token = " + (data.accessToken || "");
+      return;
+    }
+
+    if (data.status === "PENDING_APPROVAL") {
+      document.getElementById("status").textContent =
+        `Pending approval. challengeId=${data.challengeId}. Polling...`;
+
+      startPolling(data.challengeId);
+      return;
+    }
+
+    document.getElementById("status").textContent = "Unexpected: " + JSON.stringify(data);
+  }
+
+  function startPolling(challengeId) {
+    pollTimer = setInterval(async () => {
+      const res = await fetch(API + `/login-challenges/${challengeId}/status`);
+      const data = await res.json();
+      log("Poll: " + JSON.stringify(data));
+
+      document.getElementById("status").textContent =
+        `challengeId=${challengeId} status=${data.status}`;
+
+      if (data.status !== "PENDING") {
+        clearInterval(pollTimer);
+        alert("Final status: " + data.status);
+      }
+    }, 1500);
+  }
+</script>
+</body>
+</html>

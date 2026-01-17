@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Device A (Active Session)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    input { margin: 4px 0; padding: 6px; width: 260px; }
+    button { padding: 8px 12px; margin-right: 8px; }
+    pre { background: #f6f6f6; padding: 10px; }
+    .card { border: 1px solid #ddd; padding: 12px; margin-top: 12px; }
+  </style>
+</head>
+<body>
+<h2>Device A (Already Logged In)</h2>
+
+<div class="card">
+  <div><b>Login (to get JWT)</b></div>
+  <input id="username" placeholder="username" value="alice" />
+  <input id="password" placeholder="password" value="pass" type="password" />
+  <button onclick="loginA()">Login + Connect WS</button>
+  <div id="loginStatus"></div>
+</div>
+
+<div class="card">
+  <div><b>WebSocket / Alerts</b></div>
+  <div>Status: <span id="wsStatus">DISCONNECTED</span></div>
+  <div id="alertBox"></div>
+</div>
+
+<h3>Logs</h3>
+<pre id="log"></pre>
+
+<!-- STOMP client (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+
+<script>
+  function connectWS() {
+
+    const wsUrl = "ws://localhost:8080/ws";
+
+    stompClient = new StompJs.Client({
+      brokerURL: wsUrl,
+
+      // ✅ JWT goes here (STOMP CONNECT headers)
+      connectHeaders: {
+        token: token
+      },
+
+      reconnectDelay: 2000,
+      debug: (str) => log("[STOMP] " + str),
+
+      onConnect: () => {
+        document.getElementById("wsStatus").textContent = "CONNECTED";
+        log("WS connected");
+
+        stompClient.subscribe("/user/queue/login-alerts", (message) => {
+          const payload = JSON.parse(message.body);
+          log("Received alert: " + JSON.stringify(payload));
+          showAlert(payload);
+        });
+      },
+
+      onWebSocketClose: () => {
+        document.getElementById("wsStatus").textContent = "DISCONNECTED";
+        log("WS closed");
+      },
+
+      onStompError: (frame) => {
+        log("Broker error: " + frame.headers["message"]);
+        log("Details: " + frame.body);
+      }
+    });
+
+    stompClient.activate();
+    document.getElementById("wsStatus").textContent = "CONNECTING...";
+  }
+</script>
+</body>
+</html>
