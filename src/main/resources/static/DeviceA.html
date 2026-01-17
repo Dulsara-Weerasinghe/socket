@@ -32,6 +32,7 @@
 <pre id="log"></pre>
 
 <!-- STOMP client (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
 
 <script>
@@ -41,8 +42,7 @@
   let lastChallengeId = null;
 
   function log(msg) {
-    const el = document.getElementById("log");
-    el.textContent += msg + "\n";
+    document.getElementById("log").textContent += msg + "\n";
   }
 
   async function loginA() {
@@ -54,11 +54,12 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password })
     });
+
     const data = await res.json();
 
     if (data.status !== "OK") {
       document.getElementById("loginStatus").textContent =
-        "Login did not return OK (for Device A, try when not already online): " + JSON.stringify(data);
+        "Login did not return OK: " + JSON.stringify(data);
       log("Login response: " + JSON.stringify(data));
       return;
     }
@@ -71,11 +72,11 @@
   }
 
   function connectWS() {
-    // Pass token as query param for handshake (matches backend interceptor)
-    const wsUrl = "ws://localhost:8080/ws?token=" + encodeURIComponent(token);
+    if (stompClient) stompClient.deactivate();
 
     stompClient = new StompJs.Client({
-      brokerURL: wsUrl,
+      webSocketFactory: () =>
+        new SockJS("http://localhost:8080/ws?token=" + encodeURIComponent(token)),
       reconnectDelay: 2000,
       debug: (str) => log("[STOMP] " + str),
     });
@@ -84,7 +85,6 @@
       document.getElementById("wsStatus").textContent = "CONNECTED";
       log("WS connected");
 
-      // Subscribe to user-specific queue
       stompClient.subscribe("/user/queue/login-alerts", (message) => {
         const payload = JSON.parse(message.body);
         log("Received alert: " + JSON.stringify(payload));
@@ -108,9 +108,7 @@
 
   function showAlert(payload) {
     lastChallengeId = payload.challengeId;
-
-    const box = document.getElementById("alertBox");
-    box.innerHTML = `
+    document.getElementById("alertBox").innerHTML = `
       <div style="margin-top:10px;">
         <div><b>New login attempt!</b></div>
         <div>challengeId: ${payload.challengeId}</div>
@@ -128,6 +126,7 @@
 
   async function respond(decision) {
     if (!lastChallengeId) return alert("No challengeId yet!");
+
     const res = await fetch(API + `/login-challenges/${lastChallengeId}/respond`, {
       method: "POST",
       headers: {
@@ -136,10 +135,12 @@
       },
       body: JSON.stringify({ decision })
     });
+
     const data = await res.json();
     log("Respond result: " + JSON.stringify(data));
     alert("Decision sent: " + decision + " → status: " + data.status);
   }
 </script>
+
 </body>
 </html>
