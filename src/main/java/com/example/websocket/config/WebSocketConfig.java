@@ -11,22 +11,13 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final UserIdHandshakeHandler handshakeHandler;
+    private final WebSocketAuthInterceptor authInterceptor;
 
     public WebSocketConfig(UserIdHandshakeHandler handshakeHandler, WebSocketAuthInterceptor authInterceptor) {
         this.handshakeHandler = handshakeHandler;
         this.authInterceptor = authInterceptor;
     }
 
-        private final WebSocketAuthInterceptor authInterceptor;
-//
-//    public WebSocketConfig(WebSocketAuthInterceptor authInterceptor) {
-//        this.authInterceptor = authInterceptor;
-//    }
-//
-//    @Override
-//    public void configureClientInboundChannel(ChannelRegistration registration) {
-//        registration.interceptors(authInterceptor);
-//    }
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
         // Enable a simple memory-based message broker to send messages to clients
@@ -44,6 +35,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns("*")
                 .setHandshakeHandler(handshakeHandler)
+                .addInterceptors(authInterceptor)
                 .withSockJS(); //fallback for  browsers
     }
 }

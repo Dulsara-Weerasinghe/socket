@@ -10,8 +10,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api")
-public class TestController {
+@RequestMapping("/auth")
+public class AuthController {
 
     private final JwtService jwt;
     private final LoginChallengeService challengeService;
@@ -24,7 +24,7 @@ public class TestController {
 
     private final PresenceTracker presence;
 
-    public TestController(JwtService jwt, LoginChallengeService challengeService, SimpMessagingTemplate messagingTemplate, PresenceTracker presence) {
+    public AuthController(JwtService jwt, LoginChallengeService challengeService, SimpMessagingTemplate messagingTemplate, PresenceTracker presence) {
         this.jwt = jwt;
         this.challengeService = challengeService;
         this.messagingTemplate = messagingTemplate;

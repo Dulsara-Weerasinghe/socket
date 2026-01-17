@@ -32,49 +32,115 @@
 <pre id="log"></pre>
 
 <!-- STOMP client (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
 
 <script>
-  function connectWS() {
+  const API = "http://localhost:8080";
+  let token = null;
+  let stompClient = null;
+  let lastChallengeId = null;
 
-    const wsUrl = "ws://localhost:8080/ws";
+  function log(msg) {
+    document.getElementById("log").textContent += msg + "\n";
+  }
+
+  async function loginA() {
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    const res = await fetch(API + "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password })
+    });
+
+    const data = await res.json();
+
+    if (data.status !== "OK") {
+      document.getElementById("loginStatus").textContent =
+        "Login did not return OK: " + JSON.stringify(data);
+      log("Login response: " + JSON.stringify(data));
+      return;
+    }
+
+    token = data.accessToken;
+    document.getElementById("loginStatus").textContent = "Logged in. Token acquired.";
+    log("Token: " + token);
+
+    connectWS();
+  }
+
+  function connectWS() {
+    if (stompClient) stompClient.deactivate();
 
     stompClient = new StompJs.Client({
-      brokerURL: wsUrl,
-
-      // ✅ JWT goes here (STOMP CONNECT headers)
-      connectHeaders: {
-        token: token
-      },
-
+      webSocketFactory: () =>
+        new SockJS("http://localhost:8080/ws?token=" + encodeURIComponent(token)),
       reconnectDelay: 2000,
       debug: (str) => log("[STOMP] " + str),
-
-      onConnect: () => {
-        document.getElementById("wsStatus").textContent = "CONNECTED";
-        log("WS connected");
-
-        stompClient.subscribe("/user/queue/login-alerts", (message) => {
-          const payload = JSON.parse(message.body);
-          log("Received alert: " + JSON.stringify(payload));
-          showAlert(payload);
-        });
-      },
-
-      onWebSocketClose: () => {
-        document.getElementById("wsStatus").textContent = "DISCONNECTED";
-        log("WS closed");
-      },
-
-      onStompError: (frame) => {
-        log("Broker error: " + frame.headers["message"]);
-        log("Details: " + frame.body);
-      }
     });
+
+    stompClient.onConnect = () => {
+      document.getElementById("wsStatus").textContent = "CONNECTED";
+      log("WS connected");
+
+      stompClient.subscribe("/user/queue/login-alerts", (message) => {
+        const payload = JSON.parse(message.body);
+        log("Received alert: " + JSON.stringify(payload));
+        showAlert(payload);
+      });
+    };
+
+    stompClient.onWebSocketClose = () => {
+      document.getElementById("wsStatus").textContent = "DISCONNECTED";
+      log("WS closed");
+    };
+
+    stompClient.onStompError = (frame) => {
+      log("Broker error: " + frame.headers["message"]);
+      log("Details: " + frame.body);
+    };
 
     stompClient.activate();
     document.getElementById("wsStatus").textContent = "CONNECTING...";
   }
+
+  function showAlert(payload) {
+    lastChallengeId = payload.challengeId;
+    document.getElementById("alertBox").innerHTML = `
+      <div style="margin-top:10px;">
+        <div><b>New login attempt!</b></div>
+        <div>challengeId: ${payload.challengeId}</div>
+        <div>ip: ${payload.ip || "-"}</div>
+        <div>userAgent: ${(payload.userAgent || "-").replace(/</g,"&lt;")}</div>
+        <div>createdAt: ${payload.createdAt}</div>
+        <div>expiresAt: ${payload.expiresAt}</div>
+        <div style="margin-top:10px;">
+          <button onclick="respond('APPROVE')">Approve</button>
+          <button onclick="respond('DENY')">Deny</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async function respond(decision) {
+    if (!lastChallengeId) return alert("No challengeId yet!");
+
+    const res = await fetch(API + `/login-challenges/${lastChallengeId}/respond`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: JSON.stringify({ decision })
+    });
+
+    const data = await res.json();
+    log("Respond result: " + JSON.stringify(data));
+    alert("Decision sent: " + decision + " → status: " + data.status);
+  }
 </script>
+
 </body>
 </html>

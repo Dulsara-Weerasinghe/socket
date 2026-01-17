@@ -32,29 +32,33 @@ public class WebSocketAuthInterceptor implements HandshakeInterceptor {
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
 
-        // 1) Authorization header
-        var headers = request.getHeaders();
-        String auth = headers.getFirst("Authorization");
         String token = null;
 
+        // Authorization: Bearer <token>
+        String auth = request.getHeaders().getFirst("Authorization");
         if (auth != null && auth.startsWith("Bearer ")) {
-            token = auth.substring("Bearer ".length());
+            token = auth.substring(7);
         }
 
-        // 2) Or token query param (ws://host/ws?token=xxx)
+        // Query param: ?token=<token>
         if (token == null && request instanceof ServletServerHttpRequest ssr) {
-            HttpServletRequest servletReq = ssr.getServletRequest();
-            token = servletReq.getParameter("token");
+            token = ssr.getServletRequest().getParameter("token");
         }
 
-        if (token == null) return true; // allow anonymous connect, but they won't get /user queue properly
+        if (token == null) {
+            System.out.println("WS handshake without token: " + request.getURI());
+            return false; // for POC: require auth to use /user queue
+        }
 
         try {
             String userId = jwtService.verifyAndGetUserId(token);
             attributes.put("userId", userId);
-        } catch (Exception ignored) {}
-
-        return true;
+            System.out.println("WS handshake OK. userId=" + userId + " uri=" + request.getURI());
+            return true;
+        } catch (Exception e) {
+            System.out.println("WS JWT verify failed: " + e.getMessage());
+            return false;
+        }
     }
 
     @Override

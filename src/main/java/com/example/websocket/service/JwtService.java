@@ -44,11 +44,11 @@ public class JwtService {
     }
 
     public String verifyAndGetUserId(String token) {
-        return Jwts.parserBuilder()
+        return Jwts.parserBuilder()             // 0.11.x
                 .setSigningKey(key)
                 .build()
-                .parseClaimsJws(token);
-                .getPayload()
+                .parseClaimsJws(token)
+                .getBody()
                 .getSubject();
     }
 
